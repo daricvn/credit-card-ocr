@@ -14,6 +14,8 @@ namespace OCRConsole {
     public class CreditCardReader {
         private readonly BoundRatio NumberArea = new Models.BoundRatio(0.01f, 0.42f, 0.98f, 0.71f);
         private readonly BoundRatio NameArea = new Models.BoundRatio(0.01f, 0.75f, 0.78f, 0.99f);
+        private readonly float MinNumberAspectRatio = 3.8f;
+        private readonly float MinNameAspectRatio = 1.6f;
         /// <summary>
         /// Level of reader
         /// </summary>
@@ -21,7 +23,7 @@ namespace OCRConsole {
         public CreditCardReader() {
 
         }
-        public CreditCardReader(string source ) {
+        public CreditCardReader( string source ) {
             ImageSource = source;
         }
         public string ImageSource { get; set; }
@@ -30,44 +32,52 @@ namespace OCRConsole {
 
         static internal bool DebugMode { private get; set; } = false;
         static internal string DebugPath { set; private get; }
-        public void Process(string imageSource = null) {
+        public void Process( string imageSource = null ) {
             if ( imageSource == null && !string.IsNullOrEmpty(ImageSource) )
                 imageSource = ImageSource;
             Mat origin = EAST.Resize(new Mat(imageSource, ImreadModes.Color), 500);
-            var boxes = EAST.MergeBoxes(EAST.DetectText(origin, NumberArea, 40));
+            var boxes = EAST.MergeBoxes(EAST.DetectText(origin, NumberArea, 40, 8));
             try {
                 this.Completed = false;
+                float ar = 0;
                 foreach ( var box in boxes ) {
-                    var mat = new Mat(origin, box.ToRect());
-                    using ( var ms = new MemoryStream() ) {
-                        mat.WriteToStream(ms);
-                        var list = TryProcess(mat, true);
-                        if ( list.Count>0 && list.FirstOrDefault().Confidence>OCR.MIN_CONFIDENCE) {
-                            CardNumber = list[0].Text;
+                    ar = box.Width / (float)box.Height;
+                    if ( ar > MinNumberAspectRatio ) {
+                        var mat = new Mat(origin, box.ToRect());
+                        using ( var ms = new MemoryStream() ) {
+                            mat.WriteToStream(ms);
+                            var list = TryProcess(mat, true);
+                            list = list?.OrderByDescending(x => x.Confidence).ToList();
+                            if ( list.Count > 0 && list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
+                                CardNumber = list[0].Text;
+                            }
+                            if ( DebugMode )
+                                DebugImage(mat, null, "name" + mat.GetHashCode());
                         }
-                        if ( DebugMode )
-                            DebugImage(mat, null, "name" + mat.GetHashCode());
                     }
                 }
                 boxes = EAST.MergeBoxes(EAST.DetectText(origin, NameArea, 26));
                 foreach ( var box in boxes ) {
-                    var mat = new Mat(origin, box.ToRect());
-                    using ( var ms = new MemoryStream() ) {
-                        mat.WriteToStream(ms);
-                        var list = TryProcess(mat);
-                        if ( list.Count > 0 && list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
-                            if ( list[0].Text!=null && CheckCardName(list[0].Text) )
-                                CardName = list[0].Text;
+                    ar = box.Width / (float)box.Height;
+                    if ( ar > MinNameAspectRatio ) {
+                        var mat = new Mat(origin, box.ToRect());
+                        using ( var ms = new MemoryStream() ) {
+                            mat.WriteToStream(ms);
+                            var list = TryProcess(mat);
+                            list = list?.OrderByDescending(x => x.Confidence).ToList();
+                            if ( list.Count > 0 && list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
+                                if ( list[0].Text != null && CheckCardName(list[0].Text) )
+                                    CardName = list[0].Text;
+                            }
+                            if ( DebugMode )
+                                DebugImage(mat, null, "name" + mat.GetHashCode());
                         }
-                        if ( DebugMode )
-                            DebugImage(mat, null, "name" + mat.GetHashCode());
                     }
                 }
                 this.Completed = true;
                 OnCompleted?.Invoke(this, new EventArgs());
             }
-            catch (Exception e ) {
-                Console.WriteLine(e);
+            catch ( Exception e ) {
                 throw e;
             }
         }
@@ -76,13 +86,12 @@ namespace OCRConsole {
         public string CardName { get; set; }
 
 
-        protected List<OcrResult> TryProcess(Mat m , bool onlyNumbers=false) {
+        protected List<OcrResult> TryProcess( Mat m, bool onlyNumbers = false ) {
             using ( var OCR = new OCR() ) {
                 int lv = 1;
                 List<OcrResult> list = new List<OcrResult>();
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
-                    list.OrderByDescending(x => x.Confidence);
                     return list;
                 }
                 lv++; // 2
@@ -91,7 +100,6 @@ namespace OCRConsole {
                 DebugImage(m, null, "denoised" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
-                    list.OrderByDescending(x => x.Confidence);
                     return list;
                 }
                 lv++; // 3
@@ -101,7 +109,6 @@ namespace OCRConsole {
                 DebugImage(m, null, "gray" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
-                    list.OrderByDescending(x => x.Confidence);
                     return list;
                 }
                 lv++; // 4
@@ -110,14 +117,12 @@ namespace OCRConsole {
                 DebugImage(m, null, "dilate" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
-                    list.OrderByDescending(x => x.Confidence);
                     return list;
                 }
                 m.Erode(new Mat(6, 6, MatType.CV_8U));
                 DebugImage(m, null, "erode" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
-                    list.OrderByDescending(x => x.Confidence);
                     return list;
                 }
                 lv++; // 5
@@ -126,7 +131,6 @@ namespace OCRConsole {
                 var fm = BitmapToMat(edged);
                 DebugImage(fm, null, "edge" + fm.GetHashCode());
                 list.AddRange(OCR.GetResult(fm, onlyNumbers));
-                list.OrderByDescending(x => x.Confidence);
                 return list;
             }
         }

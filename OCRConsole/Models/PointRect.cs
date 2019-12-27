@@ -9,6 +9,9 @@ namespace OCRConsole.Models {
         public int AY;
         public int BX;
         public int BY;
+
+        public int Width => Math.Abs(BX - AX);
+        public int Height => Math.Abs(BY - AY);
         public PointRect(int x, int y, int ex, int ey ) {
             AX = x;
             AY = y;

@@ -10,7 +10,7 @@ using Tesseract;
 namespace OCRConsole {
     class Program {
         static void Main( string[] args ) {
-            var path = "cards/card_4.png";
+            var path = "cards/card_2.png";
             CreditCardReader reader = new CreditCardReader(path);
             try {
                 CreditCardReader.DebugMode = true;
