@@ -9,17 +9,24 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace OCRConsole {
     public class CreditCardReader {
         private readonly BoundRatio NumberArea = new Models.BoundRatio(0.01f, 0.42f, 0.98f, 0.71f);
         private readonly BoundRatio NameArea = new Models.BoundRatio(0.01f, 0.75f, 0.78f, 0.99f);
-        private readonly float MinNumberAR = 3.8f;
-        private readonly float MinNameAR = 1.6f;
+        private readonly float MinNumberAR = 5.5f;
+        private readonly float MinNameAR = 2f;
+        private readonly string OCR_A = "resources/ocra.png";
+        private readonly string OCR_B = "resources/ocrb.png";
         /// <summary>
         /// Level of reader
         /// </summary>
         public int Level { get; set; } = 5;
+        /// <summary>
+        /// Padding level when picking the number
+        /// </summary>
+        public int Padding { get; set; } = 8;
         public CreditCardReader() {
 
         }
@@ -36,41 +43,59 @@ namespace OCRConsole {
             if ( imageSource == null && !string.IsNullOrEmpty(ImageSource) )
                 imageSource = ImageSource;
             Mat origin = EAST.Resize(new Mat(imageSource, ImreadModes.Color), 500);
-            var boxes = EAST.MergeBoxes(EAST.DetectText(origin, NumberArea, 40));
+            var allBoxes = EAST.DetectText(origin, NumberArea, 40, Padding);
+            var tmpBoxes = allBoxes.Select(x => x.ToRect()).ToList();
+            var boxes = EAST.MergeBoxes(allBoxes);
+            List<Rect> filteredBoxes;
+            var tm = new TemplateMatching();
             try {
                 this.Completed = false;
                 float ar;
                 foreach ( var box in boxes ) {
                     ar = box.Width / (float)box.Height;
                     if ( ar > MinNumberAR ) {
-                        var mat = new Mat(origin, box.ToRect());
-                        using ( var ms = new MemoryStream() ) {
-                            mat.WriteToStream(ms);
+                        filteredBoxes = tmpBoxes.Where(x => x.Y == box.AY).OrderBy(x=>x.X).ToList();
+                        List<string> words = new List<string>(filteredBoxes.Count);
+                        foreach ( var b in filteredBoxes ) {
+                            var mat = new Mat(origin, b);
                             var list = TryProcess(mat, true);
                             list = list?.OrderByDescending(x => x.Confidence).ToList();
-                            if ( list.Count > 0 && list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
-                                CardNumber = list[0].Text;
+                            if ( list.Count > 0 ) {
+                                if ( list.Select(x => x.Confidence).Max() < OCR.SAFE_CONFIDENCE ) {
+                                    var matches = TryMatch(tm, origin, TemplateMatching.MatchingType.NUMERIC, new OpenCvSharp.Range(10, 220), new OpenCvSharp.Range(14, 38), boxes: b);
+                                    list.AddRange(matches);
+                                    list = list?.OrderByDescending(x => x.Confidence).ToList();
+                                }
+                                if ( list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
+                                    words.Add(list[0].Text.TrimStart().TrimEnd());
+                                }
                             }
-                            if ( DebugMode )
-                                DebugImage(mat, null, "name" + mat.GetHashCode());
                         }
+                        CardNumber = string.Join(" ", words);
                     }
                 }
-                boxes = EAST.MergeBoxes(EAST.DetectText(origin, NameArea, 26));
+                allBoxes = EAST.DetectText(origin, NameArea, 26);
+                if (allBoxes.Count == 0 ) 
+                    allBoxes = EAST.DetectText(origin, NameArea, 20);
+                tmpBoxes = allBoxes.Select(x => x.ToRect()).ToList();
+                boxes = EAST.MergeBoxes(allBoxes);
                 foreach ( var box in boxes ) {
                     ar = box.Width / (float)box.Height;
                     if ( ar > MinNameAR ) {
+                        filteredBoxes = tmpBoxes.Where(x => x.Y == box.AY).OrderBy(x => x.X).ToList();
                         var mat = new Mat(origin, box.ToRect());
-                        using ( var ms = new MemoryStream() ) {
-                            mat.WriteToStream(ms);
-                            var list = TryProcess(mat);
-                            list = list?.OrderByDescending(x => x.Confidence).ToList();
-                            if ( list.Count > 0 && list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
-                                if ( list[0].Text != null && CheckCardName(list[0].Text) )
-                                    CardName = list[0].Text;
+                        var list = TryProcess(mat);
+                        list = list?.OrderByDescending(x => x.Confidence).ToList();
+                        if ( list.Count > 0 ) {
+                            if ( list.Select(x => x.Confidence).Max() < OCR.SAFE_CONFIDENCE ) {
+                                var matches = TryMatch(tm, origin, TemplateMatching.MatchingType.TEXT, new OpenCvSharp.Range(6, 280), new OpenCvSharp.Range(6, 38), filteredBoxes);
+                                list.AddRange(matches);
+                                list = list?.OrderByDescending(x => x.Confidence).ToList();
                             }
-                            if ( DebugMode )
-                                DebugImage(mat, null, "name" + mat.GetHashCode());
+                            if ( list.FirstOrDefault().Confidence > OCR.MIN_CONFIDENCE ) {
+                                if ( list[0].Text != null && CheckCardName(list[0].Text) )
+                                    CardName = list[0].Text.TrimStart().TrimEnd() ;
+                            }
                         }
                     }
                 }
@@ -82,9 +107,25 @@ namespace OCRConsole {
             }
         }
 
-        public string CardNumber { get; set; }
-        public string CardName { get; set; }
-
+        public string CardNumber { get; private set; }
+        public string CardName { get; private set; }
+        protected List<OcrResult> TryMatch( TemplateMatching tm, Mat mat, TemplateMatching.MatchingType type, OpenCvSharp.Range width, OpenCvSharp.Range height,Rect boxes ) {
+            List<Rect> list = new List<Rect>(1);
+            list.Add(boxes);
+            return TryMatch(tm, mat, type, width, height, list);
+        }
+        protected List<OcrResult> TryMatch(TemplateMatching tm, Mat mat, TemplateMatching.MatchingType type, OpenCvSharp.Range width, OpenCvSharp.Range height, List<Rect> boxes ) {
+            tm.TemplateFontPath = OCR_A;
+            tm.FillDictionary();
+            List<OcrResult> result = new List<OcrResult>();
+            result.Add(tm.Match(mat, type, null, width, height, processImage: false, padding:-1, boxes: boxes));
+            if ( result.Select(x => x.Confidence).Max() > OCR.SAFE_CONFIDENCE )
+                return result;
+            tm.TemplateFontPath = OCR_B;
+            tm.FillDictionary();
+            result.Add(tm.Match(mat, type, null, width, height, processImage: false, padding: -1, boxes: boxes));
+            return result;
+        }
 
         protected List<OcrResult> TryProcess(Mat m , bool onlyNumbers=false) {
             using ( var OCR = new OCR() ) {
@@ -97,7 +138,8 @@ namespace OCRConsole {
                 lv++; // 2
                 if ( lv > Level ) return list;
                 Cv2.FastNlMeansDenoising(m, m, 9);
-                DebugImage(m, null, "denoised" + m.GetHashCode());
+                if ( DebugMode )
+                    DebugImage(m, null, "denoised" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
                     return list;
@@ -106,7 +148,8 @@ namespace OCRConsole {
                 if ( lv > Level ) return list;
                 var tmpMat = m.Clone();
                 m = EdgeFilter.Process(m);
-                DebugImage(m, null, "gray" + m.GetHashCode());
+                if ( DebugMode )
+                    DebugImage(m, null, "gray" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
                     return list;
@@ -114,13 +157,15 @@ namespace OCRConsole {
                 lv++; // 4
                 if ( lv > Level ) return list;
                 m.Dilate(new Mat(3, 3, MatType.CV_8U));
-                DebugImage(m, null, "dilate" + m.GetHashCode());
+                if ( DebugMode )
+                    DebugImage(m, null, "dilate" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
                     return list;
                 }
                 m.Erode(new Mat(6, 6, MatType.CV_8U));
-                DebugImage(m, null, "erode" + m.GetHashCode());
+                if ( DebugMode )
+                    DebugImage(m, null, "erode" + m.GetHashCode());
                 list.AddRange(OCR.GetResult(m, onlyNumbers));
                 if ( list.FirstOrDefault(x => x.Confidence > OCR.SAFE_CONFIDENCE) != null ) {
                     return list;
@@ -129,7 +174,8 @@ namespace OCRConsole {
                 if ( lv > Level ) return list;
                 var edged = EdgeFilter.Filter(MatToBitmap(tmpMat), FilterMatrix.Sobel3x3Horizontal, FilterMatrix.Sobel3x3Vertical, 87);
                 var fm = BitmapToMat(edged);
-                DebugImage(fm, null, "edge" + fm.GetHashCode());
+                if ( DebugMode )
+                    DebugImage(fm, null, "edge" + fm.GetHashCode());
                 list.AddRange(OCR.GetResult(fm, onlyNumbers));
                 return list;
             }
@@ -163,6 +209,12 @@ namespace OCRConsole {
                 m.Save(ms, ImageFormat.Jpeg);
                 return Mat.FromImageData(ms.ToArray());
             }
+        }
+
+        private HashSet<T> Clone<T>(HashSet<T> source) {
+            T[] rects = new T[source.Count];
+            source.CopyTo(rects);
+            return rects.ToHashSet();
         }
     }
 }

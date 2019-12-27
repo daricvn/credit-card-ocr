@@ -21,6 +21,12 @@ namespace OCRConsole.Models {
         public Rect ToRect() {
             return new Rect(AX, AY, BX - AX, BY - AY);
         }
+        public void FromRect(Rect r ) {
+            this.AX = r.X;
+            this.AY = r.Y;
+            this.BX = r.X + r.Width;
+            this.BY = r.Y + r.Height;
+        }
 
         public override bool Equals( object obj ) {
             if (obj is PointRect ) {
@@ -28,6 +34,10 @@ namespace OCRConsole.Models {
                 return this.AX == t.AX && this.AY == t.AY && this.BX == t.BX && this.BY == t.BY;
             }
             return false;
+        }
+
+        public PointRect Clone() {
+            return new PointRect(AX, AY, BX, BY);
         }
 
         public override int GetHashCode() {

@@ -20,6 +20,10 @@ namespace OCRNET {
         /// Level of reader
         /// </summary>
         public int Level { get; set; } = 5;
+        /// <summary>
+        /// Padding level when picking the number
+        /// </summary>
+        public int Padding { get; set; } = 8;
         public CreditCardReader() {
 
         }
@@ -36,7 +40,7 @@ namespace OCRNET {
             if ( imageSource == null && !string.IsNullOrEmpty(ImageSource) )
                 imageSource = ImageSource;
             Mat origin = EAST.Resize(new Mat(imageSource, ImreadModes.Color), 500);
-            var boxes = EAST.MergeBoxes(EAST.DetectText(origin, NumberArea, 40));
+            var boxes = EAST.MergeBoxes(EAST.DetectText(origin, NumberArea, 40, Padding));
             try {
                 this.Completed = false;
                 float ar;

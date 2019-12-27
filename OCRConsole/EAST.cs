@@ -27,7 +27,7 @@ namespace OCRConsole {
                 int[] originSize = new int[] { img.Width, img.Height };
                 float wratio = originSize[0] / (float) W;
                 float hratio = originSize[1] / (float) H;
-                var proc = img.Resize(new Size(W, H));
+                var proc = Resize(img,W);
                 int x;
                 int y;
                 int ex;
@@ -112,7 +112,7 @@ namespace OCRConsole {
         }
 
         public static HashSet<PointRect> MergeBoxes(HashSet<PointRect> source ) {
-            var box = source.ToList();
+            var box = new List<PointRect>(source);
             for (var i=box.Count-2; i >= 0; i-- )
                 for (var j=box.Count-1; j>i; j-- )
                     if (i< box.Count && j< box.Count && box[i].AY==box[j].AY && box[i].BY == box[j].BY ) {
@@ -134,6 +134,14 @@ namespace OCRConsole {
                         }
                     }
             return box.ToHashSet();
+        }
+        public static Rect Resize( Rect source, int originWidth, int width ) {
+            float porfotion = width / (float) originWidth;
+            var x = (int)Math.Round((float) source.X * porfotion);
+            var y = (int)Math.Round((float) source.Y * porfotion);
+            var w = (int)Math.Round((float)source.Width * porfotion);
+            var h = (int)Math.Round((float)source.Height * porfotion);
+            return new Rect(x, y, w, h);
         }
 
         public static Mat Resize(Mat source, int width ) {

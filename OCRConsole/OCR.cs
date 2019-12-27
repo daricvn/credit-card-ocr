@@ -11,7 +11,7 @@ using Tesseract;
 
 namespace OCRConsole {
     public class OCR: IDisposable {
-        public const float MIN_CONFIDENCE = 0.6f;
+        public const float MIN_CONFIDENCE = 0.5f;
         public const float SAFE_CONFIDENCE = 0.82f;
         private static readonly PageSegMode[] modePresets = new PageSegMode[] { PageSegMode.SingleBlock, PageSegMode.SingleLine, PageSegMode.SingleWord, PageSegMode.RawLine };
 
