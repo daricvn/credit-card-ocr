@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace OCRConsole.Models {
+namespace OCRNET.Models {
     public class PointRect {
         public int AX;
         public int AY;

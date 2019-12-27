@@ -1,5 +1,6 @@
-﻿using OCRConsole.Core;
-using OCRConsole.Models;
+﻿using OCRNET.Core;
+using OCRNET.Models;
+using OCRNET.Utility;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
@@ -7,10 +8,9 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 
-namespace OCRConsole {
+namespace OCRNET {
     public class CreditCardReader {
         private readonly BoundRatio NumberArea = new Models.BoundRatio(0.01f, 0.42f, 0.98f, 0.71f);
         private readonly BoundRatio NameArea = new Models.BoundRatio(0.01f, 0.75f, 0.78f, 0.99f);
@@ -141,7 +141,7 @@ namespace OCRConsole {
             if (boxes !=null)
                 foreach ( var box in boxes )
                     Cv2.Rectangle(img, box.ToRect(), new Scalar(0, 255, 0), 3);
-            var targetPath = System.IO.Path.Join(System.IO.Path.GetDirectoryName(originPath), "result\\", System.IO.Path.GetFileNameWithoutExtension(originPath) + "_" + additional + System.IO.Path.GetExtension(originPath));
+            var targetPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(originPath), "result\\", System.IO.Path.GetFileNameWithoutExtension(originPath) + "_" + additional + System.IO.Path.GetExtension(originPath));
             img.SaveImage(targetPath);
         }
 
