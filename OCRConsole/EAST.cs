@@ -89,7 +89,10 @@ namespace OCRConsole {
                     for (var i=0; i< rects.Count-1; i++)
                         for (var j=i+1; j < rects.Count; j++)
                             if (Math.Abs(rects[j].AY - rects[i].AY)<= heightThreshold ) {
-                                rects[j].AY = rects[i].AY;
+                                if ( rects[j].AY > rects[i].AY )
+                                    rects[j].AY = rects[i].AY;
+                                else
+                                    rects[i].AY = rects[j].AY;
                                 if ( rects[j].BY > rects[i].BY )
                                     rects[i].BY = rects[j].BY;
                                 else

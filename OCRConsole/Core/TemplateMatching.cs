@@ -1,7 +1,7 @@
-﻿using Numpy;
+﻿using NumSharp;
 using OCRConsole.Models;
+using OCRConsole.Utility;
 using OpenCvSharp;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -24,7 +24,7 @@ namespace OCRConsole.Core {
             mat=mat.CvtColor(ColorConversionCodes.BGR2GRAY);
             mat=mat.Threshold(10, 255, ThresholdTypes.BinaryInv);
             var cnts = Cv2.FindContoursAsMat(mat, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-            var list = new List<Mat<Point>>(cnts);
+            var list = new List<Mat<OpenCvSharp.Point>>(cnts);
             list = list.OrderBy(x => x.BoundingRect().X).ToList(); // Sort by left - to - right
             Rect r;
             _dict = new List<Mat>(list.Count);
@@ -58,13 +58,13 @@ namespace OCRConsole.Core {
                 var gradX = tophat.Sobel(MatType.CV_32F, 1, 0, -1);
                 float[,] data;
                 gradX.GetRectangularArray(out data);
-                NDarray grad = np.array(data);
+                NDArray grad = np.array(data);
                 grad = np.absolute(grad);
                 var (min, max) = (grad.min(), grad.max());
                 var newGrad = (255 * ((grad - min) / (max - min)));
                 newGrad = newGrad.astype(np.uint8);
-                var outputData = newGrad.GetData<float>();
-                var result = Make2DArray(outputData, data.GetLength(0), data.GetLength(1));
+                var result = newGrad.ToMuliDimArray<float>();
+                //var result = ImLib.Make2DArray(outputData, data.GetLength(0), data.GetLength(1));
                 filtered = new Mat(data.GetLength(0), data.GetLength(1), MatType.CV_8U, result);
                 filtered = filtered.MorphologyEx(MorphTypes.Close, rectKernel);
                 filtered = filtered.Threshold(0, 255, ThresholdTypes.Binary | ThresholdTypes.Otsu);
@@ -86,7 +86,7 @@ namespace OCRConsole.Core {
                     var yar = r.Y / (float)h;
                     if ( ar > minAspectRatio && xar >= bound.Value.MinBoundX && xar <= bound.Value.MaxBoundX
                         && yar >= bound.Value.MinBoundY && yar <= bound.Value.MaxBoundY ) {
-                        if ( IsInRange(r.Width, width.Value) && IsInRange(r.Height, height.Value) ) {
+                        if ( ImLib.IsInRange(r.Width, width.Value) && ImLib.IsInRange(r.Height, height.Value) ) {
                             locs.Add(r);
                         }
                     }
@@ -96,7 +96,7 @@ namespace OCRConsole.Core {
                 locs = boxes.Select(x=>EAST.Resize(x, source.Width, 366)).ToList();
             }
             locs = locs.OrderBy(x => x.X).ToList();
-            List<Mat<Point>> digitCnts;
+            List<Mat<OpenCvSharp.Point>> digitCnts;
             List<double> scores = new List<double>();
             StringBuilder output = new StringBuilder();
             bool valid = false;
@@ -151,25 +151,12 @@ namespace OCRConsole.Core {
             return ocr;
         }
 
-        private static bool IsInRange(int value, OpenCvSharp.Range range ) {
-            return value >= range.Start && value <= range.End;
-        }
         private static Rect ExpandRect(Rect rect, int v ) {
             var x = rect.X - v;
             var y = rect.Y - v;
             var ex = (rect.Width + rect.X) + v;
             var ey = (rect.Height + rect.Y) + v;
             return new Rect(x, y, ex - x, ey - y);
-        }
-
-        private static T[,] Make2DArray<T>( T[] input, int height, int width ) {
-            T[,] output = new T[height, width];
-            for ( int i = 0; i < height; i++ ) {
-                for ( int j = 0; j < width; j++ ) {
-                    output[i, j] = input[i * width + j];
-                }
-            }
-            return output;
         }
     }
 }
